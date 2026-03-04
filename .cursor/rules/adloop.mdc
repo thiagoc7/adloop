@@ -1,0 +1,284 @@
+---
+description: AdLoop MCP orchestration — Google Ads + GA4 + codebase intelligence
+globs:
+alwaysApply: true
+---
+
+# AdLoop — AI Orchestration Rules
+
+You have access to AdLoop MCP tools that connect Google Ads and Google Analytics (GA4) data. These rules teach you how to use them intelligently.
+
+## Tool Inventory
+
+### GA4 Read Tools
+
+| Tool | When to Use | Key Parameters |
+|------|-------------|----------------|
+| `get_account_summaries` | First-time discovery — find which GA4 properties exist | (none — uses config) |
+| `run_ga4_report` | Any analytics question — sessions, users, conversions, page performance | `dimensions`, `metrics`, `date_range_start`, `date_range_end`, `limit` |
+| `run_realtime_report` | After code deploys — verify tracking fires correctly | `dimensions`, `metrics` |
+| `get_tracking_events` | Understanding what events are configured and their volume | `date_range_start`, `date_range_end` |
+
+### Google Ads Read Tools
+
+| Tool | When to Use | Key Parameters |
+|------|-------------|----------------|
+| `list_accounts` | First-time discovery — find which Ads accounts exist | (none — uses MCC from config) |
+| `get_campaign_performance` | Campaign-level metrics — impressions, clicks, cost, conversions | `date_range_start`, `date_range_end` |
+| `get_ad_performance` | Ad copy analysis — which headlines/descriptions work | `date_range_start`, `date_range_end` |
+| `get_keyword_performance` | Keyword analysis — quality scores, competitive metrics | `date_range_start`, `date_range_end` |
+| `get_search_terms` | Find negative keyword opportunities and understand user intent | `date_range_start`, `date_range_end` |
+| `run_gaql` | Custom queries not covered by other tools | `query`, `format` (table/json/csv) |
+
+**Return format notes:**
+- Ads read tools automatically compute `metrics.cost` (EUR) and `metrics.cpa` from `metrics.cost_micros` — no manual division needed.
+- `metrics.average_cpc_eur` is also pre-computed where available.
+- `get_ad_performance` returns full `headlines` and `descriptions` lists for RSAs.
+
+### Google Ads Write Tools (ALL require safety confirmation)
+
+| Tool | What It Does | Validation |
+|------|-------------|------------|
+| `draft_responsive_search_ad` | Create RSA preview (does NOT publish) | 3-15 headlines (≤30 chars), 2-4 descriptions (≤90 chars), final_url required |
+| `draft_keywords` | Propose keyword additions (does NOT add) | Each keyword needs `text` and `match_type` (EXACT/PHRASE/BROAD) |
+| `add_negative_keywords` | Propose negative keywords (does NOT add) | `campaign_id`, keyword list, `match_type` |
+| `pause_entity` | Propose pausing campaign/ad group/ad/keyword | `entity_type`, `entity_id` |
+| `enable_entity` | Propose enabling paused entity | `entity_type`, `entity_id` |
+| `remove_entity` | Propose REMOVING an entity (irreversible) | `entity_type` (incl. "negative_keyword"), `entity_id` |
+| `confirm_and_apply` | Execute a previously previewed change | `plan_id` from a draft tool, `dry_run` (default true) |
+
+**Write tool workflow:**
+1. Call a `draft_*` tool → returns a preview with a `plan_id`
+2. Show the full preview to the user and wait for approval
+3. Call `confirm_and_apply(plan_id=..., dry_run=true)` first to test
+4. Only call with `dry_run=false` after explicit user confirmation
+
+**Safety behaviors:**
+- New RSAs are created as PAUSED — user must explicitly enable them after review.
+- `remove_entity` is IRREVERSIBLE — always prefer `pause_entity` unless the user explicitly wants permanent removal. Removal triggers double confirmation in the safety layer.
+- `remove_entity` supports `entity_type` values: "campaign", "ad_group", "ad", "keyword", "negative_keyword". Use "negative_keyword" to remove campaign-level negative keywords.
+- `require_dry_run: true` in config overrides `dry_run=false` — the user must change the config to allow real mutations.
+- All operations (including dry runs) are logged to `~/.adloop/audit.log`.
+
+## Safety Rules (CRITICAL — always follow)
+
+1. **NEVER call confirm_and_apply without showing the preview to the user first.** Always present the full preview from a draft_* tool and wait for explicit user approval.
+
+2. **Default to dry_run=true.** When calling confirm_and_apply, always use dry_run=true unless the user explicitly says to apply for real. Even then, `require_dry_run` in config may override this.
+
+3. **Respect budget caps.** The config has max_daily_budget set. Never propose a campaign budget above this.
+
+4. **Double-check destructive operations.** For any pause, enable, remove, or budget change, explicitly warn the user about the impact before proceeding. `remove_entity` is irreversible — prefer `pause_entity` and only use removal when the user explicitly requests it.
+
+5. **One change at a time.** Don't batch multiple write operations. Draft one change, get approval, apply it, then move to the next.
+
+6. **Never guess entity IDs.** Always retrieve IDs from a read tool first (`get_campaign_performance` for campaign IDs, `get_ad_performance` for ad IDs, etc.) before passing them to write tools.
+
+## GDPR Consent & Data Discrepancies
+
+Most websites (especially in the EU) use a GDPR cookie consent banner. This has a critical impact on data interpretation:
+
+- **Google Ads counts all clicks** regardless of consent. A click is a click — no consent needed.
+- **GA4 only records sessions for users who accept analytics cookies.** Users who reject or ignore the consent banner are invisible to GA4.
+- **This means Ads clicks will almost always be higher than GA4 sessions.** A ratio of 2:1 to 5:1 (clicks:sessions) is normal with consent banners, not a tracking bug.
+- **Conversion events in GA4 are also affected** — only consenting users trigger events. True conversion rates are likely higher than what GA4 reports.
+
+**Before diagnosing a tracking issue, always consider consent:**
+1. If Ads shows 10 clicks but GA4 shows 3 sessions → likely consent rejection, not broken tracking.
+2. If GA4 shows 0 sessions from paid traffic → consent could explain it, but also check UTM parameters and GA4 filters.
+3. Only flag tracking as broken when the discrepancy cannot be explained by consent (e.g., GA4 shows zero sessions for ALL traffic sources, or organic traffic also shows anomalies).
+
+**Google Consent Mode v2:** Some sites implement Consent Mode, which sends cookieless pings to GA4 even without consent. This reduces (but doesn't eliminate) the gap. If you see GA4 data is closer to Ads data, Consent Mode may be active. Check for `gtag('consent', ...)` calls in the codebase.
+
+## Orchestration Patterns
+
+### When user asks about performance or "how are my ads doing"
+
+1. Call `get_campaign_performance` for the relevant date range
+2. If they mention specific keywords or search terms, also call `get_keyword_performance` or `get_search_terms`
+3. Present a summary with the key metrics: spend (`metrics.cost`), clicks, conversions, CPA (`metrics.cpa`), CTR
+4. Highlight anything concerning: zero conversions, high CPA, low quality scores, wasteful search terms
+5. Compare against best practices (see Marketing Best Practices section)
+
+### When user asks about conversions or conversion drops
+
+1. Start with `run_ga4_report` — pull conversion events for the affected period vs. a comparison period. Use `dimensions=["eventName"]` and `metrics=["eventCount"]` with the relevant date ranges.
+2. Use `run_ga4_report` with `dimensions=["pagePath"]` and `metrics=["sessions", "conversions"]` to identify which pages dropped
+3. Call `get_campaign_performance` to check if traffic volume or source mix changed
+4. Call `get_search_terms` to see if search intent shifted
+5. **Before concluding tracking is broken:** Compare Ads clicks vs GA4 sessions. If clicks > sessions, factor in GDPR consent (see section above). Only diagnose a tracking issue if the gap is abnormally large or affects all traffic sources equally.
+6. If the user's codebase is accessible (Cursor native), search for recent changes to the affected pages
+7. Present a unified diagnosis combining analytics + ads + code insights
+
+### When user wants to create an ad
+
+1. Call `get_campaign_performance` to understand existing campaign structure and find the right `campaign.id`
+2. Use `run_gaql` to find ad group IDs: `SELECT ad_group.id, ad_group.name FROM ad_group WHERE campaign.id = {campaign_id}`
+3. Call `get_tracking_events` to verify conversion tracking exists
+4. If codebase is accessible, read the landing page code to extract value propositions
+5. Call `draft_responsive_search_ad` with at least 8-10 diverse headlines and 3-4 descriptions
+6. Present the complete preview to the user
+7. Wait for explicit user approval before calling `confirm_and_apply`
+
+### When user asks about tracking or event issues
+
+1. **First, consider GDPR consent** — if Ads clicks > GA4 sessions, this is likely consent rejection, not broken tracking. State this before investigating further.
+2. Call `get_tracking_events` to see what GA4 actually receives
+3. If codebase is accessible, search for gtag/dataLayer event code and look for consent mode implementation (`gtag('consent', ...)`)
+4. Compare what the code sends vs what GA4 reports
+5. Identify mismatches and suggest fixes — distinguish between consent-caused gaps (normal) and actual tracking bugs (code errors, missing events, wrong property ID)
+
+### When user asks to add negative keywords
+
+1. Call `get_search_terms` to see current search term data
+2. Identify irrelevant terms that waste budget — group them by theme
+3. Call `get_campaign_performance` to get the right `campaign.id`
+4. Call `add_negative_keywords` with the proposed list and the campaign ID
+5. Present preview and wait for confirmation
+
+### When user asks to pause or enable something
+
+1. Call the appropriate read tool to confirm the entity exists and get its current status
+2. Call `pause_entity` or `enable_entity` with the entity type and ID
+3. Present the preview with a clear warning about impact (e.g. "This will stop all ads in this campaign")
+4. Wait for confirmation
+
+## Default Parameters
+
+When the user doesn't specify:
+- **Date range**: Default to last 30 days for Ads, last 7 days for GA4
+- **Customer ID**: Use the default from config (no need to ask)
+- **Property ID**: Use the default from config (no need to ask)
+- **Format**: Use "table" for run_gaql results
+
+## GAQL Quick Reference
+
+GAQL (Google Ads Query Language) is SQL-like but with specific resource names and field paths.
+
+### Basic Syntax
+
+```sql
+SELECT field1, field2, ...
+FROM resource
+WHERE condition
+ORDER BY field [ASC|DESC]
+LIMIT n
+```
+
+### Common Resources
+
+| Resource | Use For |
+|----------|---------|
+| `campaign` | Campaign-level data |
+| `ad_group` | Ad group-level data |
+| `ad_group_ad` | Ad-level data (includes ad copy) |
+| `keyword_view` | Keyword performance |
+| `search_term_view` | Search terms report |
+| `ad_group_criterion` | Keywords and targeting criteria |
+| `campaign_budget` | Budget information |
+| `bidding_strategy` | Bidding strategy details |
+| `customer_client` | List accounts under an MCC (uses login_customer_id) |
+
+### Common Fields
+
+**Campaign fields:**
+- `campaign.id`, `campaign.name`, `campaign.status`
+- `campaign.advertising_channel_type` (SEARCH, DISPLAY, SHOPPING, VIDEO)
+- `campaign.bidding_strategy_type`
+
+**Ad Group fields:**
+- `ad_group.id`, `ad_group.name`, `ad_group.status`
+- `ad_group.cpc_bid_micros` (bid in micros — divide by 1,000,000 for actual value)
+
+**Ad fields:**
+- `ad_group_ad.ad.responsive_search_ad.headlines`
+- `ad_group_ad.ad.responsive_search_ad.descriptions`
+- `ad_group_ad.ad.final_urls`
+- `ad_group_ad.status`
+
+**Keyword fields:**
+- `ad_group_criterion.keyword.text`
+- `ad_group_criterion.keyword.match_type` (EXACT, PHRASE, BROAD)
+- `ad_group_criterion.quality_info.quality_score`
+
+**Metrics (available on most resources):**
+- `metrics.impressions`, `metrics.clicks`, `metrics.cost_micros`
+- `metrics.conversions`, `metrics.conversions_value`
+- `metrics.ctr`, `metrics.average_cpc`
+- `metrics.search_impression_share`, `metrics.search_rank_lost_impression_share`
+
+**Segments (for time-based breakdowns):**
+- `segments.date` — daily breakdown
+- `segments.device` — MOBILE, DESKTOP, TABLET
+- `segments.ad_network_type` — SEARCH, CONTENT, YOUTUBE
+
+### Date Ranges
+
+```sql
+WHERE segments.date DURING LAST_7_DAYS
+WHERE segments.date DURING LAST_30_DAYS
+WHERE segments.date DURING THIS_MONTH
+WHERE segments.date DURING LAST_MONTH
+WHERE segments.date BETWEEN '2026-01-01' AND '2026-01-31'
+```
+
+### Important GAQL Rules
+
+- You CANNOT use `SELECT *` — every field must be named explicitly
+- Metrics fields cannot appear in WHERE clauses with resource fields in the same query (use HAVING for post-filtering or filter in application logic)
+- `cost_micros` values are in micros — divide by 1,000,000 for the actual currency amount. The dedicated read tools (get_campaign_performance, etc.) already compute `metrics.cost` and `metrics.cpa` for you. Only `run_gaql` returns raw micros.
+- When selecting `segments.date`, results are broken down by day
+- Status values are strings: `'ENABLED'`, `'PAUSED'`, `'REMOVED'`
+- `search_term_view` always requires a date segment in WHERE
+
+### Example Queries
+
+**Top campaigns by spend:**
+```sql
+SELECT campaign.name, campaign.status, metrics.cost_micros, metrics.clicks, metrics.conversions
+FROM campaign
+WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED'
+ORDER BY metrics.cost_micros DESC
+LIMIT 10
+```
+
+**Keywords with low quality score:**
+```sql
+SELECT ad_group_criterion.keyword.text, ad_group_criterion.quality_info.quality_score,
+       metrics.impressions, metrics.clicks, metrics.cost_micros
+FROM keyword_view
+WHERE segments.date DURING LAST_30_DAYS
+  AND ad_group_criterion.quality_info.quality_score < 5
+ORDER BY metrics.cost_micros DESC
+```
+
+**Search terms that cost money but don't convert:**
+```sql
+SELECT search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions
+FROM search_term_view
+WHERE segments.date DURING LAST_30_DAYS AND metrics.clicks > 5 AND metrics.conversions = 0
+ORDER BY metrics.cost_micros DESC
+LIMIT 20
+```
+
+**Ad groups in a specific campaign:**
+```sql
+SELECT ad_group.id, ad_group.name, ad_group.status
+FROM ad_group
+WHERE campaign.id = 12345678
+```
+
+## Marketing Best Practices
+
+When advising on Google Ads:
+
+- **Match types**: Never recommend Broad Match without Smart Bidding (tCPA or tROAS) active on the campaign. Broad Match without Smart Bidding leads to budget waste.
+- **CPA monitoring**: Flag any campaign where CPA exceeds 3x the target for review.
+- **Budget sufficiency**: A campaign's daily budget should be at least 5x its target CPA to generate enough data for the algorithm.
+- **Learning phase**: Don't edit campaigns that are in an active learning phase (Google Ads shows "Learning" or "Learning (limited)" status). Wait until the learning phase completes before making changes.
+- **Negative keyword hygiene**: After reviewing search terms, always suggest adding irrelevant terms as negatives. Group them by theme.
+- **RSA best practices**: Provide at least 8-10 unique headlines (out of max 15) and 3-4 descriptions (out of max 4). Make headlines diverse — don't repeat the same message. Pin only when necessary.
+- **Quality Score**: If keywords have quality score < 5, prioritize improving ad relevance and landing page experience over bid increases.
+- **Zero conversions**: When a campaign has spent significant budget with zero conversions, investigate (1) is GDPR consent reducing visible conversions? (2) is conversion tracking set up correctly in GA4? (3) is the landing page converting organic traffic? (4) are search terms relevant? Don't just increase budget.
+- **Manual CPC + Broad Match**: This combination is dangerous — Broad Match needs Smart Bidding to control which queries it matches. Flag this immediately.
+- **Clicks vs sessions gap**: Never report a clicks > sessions discrepancy as a tracking bug without first accounting for GDPR consent. In the EU, 30-70% of users may reject analytics cookies. This is normal, not broken.
