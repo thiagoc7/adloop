@@ -175,6 +175,28 @@ def _generate_cursor_snippet() -> str:
     """).strip()
 
 
+def _generate_claude_code_snippet() -> str:
+    """Generate Claude Code MCP configuration snippet."""
+    python_path = sys.executable
+    return f'claude mcp add --transport stdio adloop -- {python_path} -m adloop'
+
+
+def _generate_claude_json_snippet() -> str:
+    """Generate .claude.json / .mcp.json configuration snippet."""
+    python_path = sys.executable
+    return textwrap.dedent(f"""\
+        {{
+          "mcpServers": {{
+            "adloop": {{
+              "type": "stdio",
+              "command": "{python_path}",
+              "args": ["-m", "adloop"]
+            }}
+          }}
+        }}
+    """).strip()
+
+
 def _step_header(num: int, title: str) -> None:
     _print()
     _print(f"  ── Step {num}: {title} ──")
@@ -318,17 +340,31 @@ def run_init_wizard() -> None:
     else:
         _print("  Skipped — OAuth will run automatically on first tool call.")
 
-    # Cursor MCP snippet
+    # MCP configuration snippets
     _print()
-    _print("  ── Cursor MCP Configuration ──")
+    _print("  ── MCP Configuration ──")
     _print()
-    _print("  Add this to your project's .cursor/mcp.json:")
+
+    # Claude Code
+    _print("  For Claude Code:")
+    _print()
+    _print(f"    {_generate_claude_code_snippet()}")
+    _print()
+    _print("  Or add to .claude.json / .mcp.json:")
+    _print()
+    claude_snippet = _generate_claude_json_snippet()
+    for line in claude_snippet.splitlines():
+        _print(f"    {line}")
+    _print()
+
+    # Cursor
+    _print("  For Cursor, add to .cursor/mcp.json:")
     _print()
     snippet = _generate_cursor_snippet()
     for line in snippet.splitlines():
         _print(f"    {line}")
     _print()
-    _print("  Then restart Cursor to pick up the MCP server.")
+    _print("  Then restart your editor to pick up the MCP server.")
     _print()
     _print("  ✓ Setup complete!")
     _print()
