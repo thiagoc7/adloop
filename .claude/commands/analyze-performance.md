@@ -1,19 +1,30 @@
-Analyze Google Ads + GA4 performance for $ARGUMENTS
+Analisar performance do Google Ads + GA4 e salvar no Diesel BI: $ARGUMENTS
 
-Follow this workflow:
+## 1. Puxar dados (adloop MCP)
 
-1. Run `get_campaign_performance` for the relevant date range (default: last 30 days)
-2. Run `analyze_campaign_conversions` to get unified Ads + GA4 data with GDPR-aware metrics
-3. If specific campaigns are mentioned, filter by campaign name
-4. If keywords are relevant, also run `get_keyword_performance` and `get_search_terms`
+- `get_campaign_performance` — período relevante (default: últimos 30 dias)
+- `analyze_campaign_conversions` — dados cruzados Ads + GA4 com GDPR gap
+- Se campanhas específicas mencionadas, filtrar por nome
+- Se keywords relevantes, `get_keyword_performance` e `get_search_terms`
 
-Present a summary with:
-- **Spend** (metrics.cost), **Clicks**, **Conversions**, **CPA**, **CTR**
-- Comparison: paid vs organic conversion rates (from non_paid_channels)
-- GDPR consent gap analysis (clicks vs sessions ratio)
-- Flags: zero conversions, CPA > 3x target, QS < 5, wasteful search terms
+## 2. Analisar
 
-If conversion issues are found, run `attribution_check` for deeper diagnosis.
-If landing page issues suspected, run `landing_page_analysis`.
+- Spend, Clicks, Conversões, CPA, CTR
+- Paid vs organic (de non_paid_channels)
+- GDPR gap (clicks vs sessions)
+- Flags: zero conversões, CPA > 3x target, QS < 5, desperdício
 
-Always consider GDPR consent before diagnosing tracking as broken.
+Se problemas de conversão: `attribution_check`
+Se problemas de landing page: `landing_page_analysis`
+
+## 3. Salvar no Diesel BI (diesel-bi MCP, company_slug "disbra")
+
+- `salvar_relatorio` — report_type: "custom", body, summary, kpis
+- `salvar_insights` — problemas e recomendações
+- `salvar_kpi_snapshot` — se for período standard (semana/mês)
+
+## 4. Salvar .md local
+
+`reports/{DATA}_{DESCRICAO}.md`
+
+Se Diesel BI MCP indisponível, gerar só .md e avisar.

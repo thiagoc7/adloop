@@ -1,29 +1,36 @@
-Gerar relatório de avaliação do trabalho da agência V4 no último período.
+Gerar relatório de avaliação do trabalho da agência V4 e salvar no Diesel BI.
 
-## O que verificar
+## 1. Puxar dados (adloop MCP)
 
-1. `get_campaign_performance` — quais campanhas estão ativas e como performam
-2. `get_search_terms` — V4 está negativando termos irrelevantes?
-3. `get_keyword_performance` — quality scores estão melhorando ou piorando?
-4. `get_negative_keywords` — quantas negativas foram adicionadas recentemente?
-5. `get_ad_performance` — anúncios novos foram criados? CTR melhorou?
+- `get_campaign_performance` — últimos 30 dias
+- `get_search_terms` — V4 está negativando termos irrelevantes?
+- `get_keyword_performance` — quality scores melhorando ou piorando?
+- `get_negative_keywords` — negativas adicionadas recentemente?
+- `get_ad_performance` — anúncios novos? CTR melhorou?
 
-## Checklist da agência
+## 2. Checklist da agência
 
+Avaliar cada item com nota:
 - [ ] Revisaram search terms este mês?
 - [ ] Adicionaram negativas?
 - [ ] CPA está dentro do target?
 - [ ] Campanhas ruins foram pausadas ou otimizadas?
-- [ ] Quality scores estão aceitáveis (>5)?
-- [ ] Anúncios foram testados/renovados?
-- [ ] Alguma campanha nova foi criada?
-- [ ] Budget está sendo bem distribuído?
+- [ ] Quality scores aceitáveis (>5)?
+- [ ] Anúncios testados/renovados?
+- [ ] Budget bem distribuído?
 
-## Output
+## 3. Comparar com check anterior
 
-Relatório conciso com nota para cada critério.
-Comparar com o relatório anterior (se existir em reports/).
+Se existir relatório v4_check anterior no Diesel BI (`listar_relatorios` com report_type "v4_check"), comparar evolução.
 
-**IMPORTANTE:** Não modificar nada. Apenas analisar.
+## 4. Salvar no Diesel BI (diesel-bi MCP, company_slug "disbra")
 
-Salvar em `reports/v4-check-{DATA}.md`
+- `salvar_relatorio` — report_type: "v4_check", body com scorecard
+- `salvar_insights` — problemas encontrados como insights
+- `salvar_kpi_snapshot` — KPIs do período
+
+## 5. Salvar .md local
+
+`reports/v4-check-{DATA}.md`
+
+**IMPORTANTE:** Não modificar campanhas. Apenas analisar.
