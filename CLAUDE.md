@@ -398,6 +398,36 @@ Rules:
 5. **Write in the correct language.** Check landing page. If unclear, ask user.
 6. **Aim for 25 chars or fewer** to leave margin.
 
+## Diesel BI Persistence
+
+After every analysis or report, persist results to Diesel BI via its MCP server (company_slug: "disbra" in prod, "diesel" in dev):
+
+### Save workflow (all reports)
+
+1. `salvar_relatorio` — full markdown + kpis + summary
+2. `salvar_insights` — each recommendation with `suggested_command`
+3. `salvar_kpi_snapshot` — trend data (spend, clicks, conversions, CPA, etc.)
+4. `salvar_campaign_snapshots` — per-campaign analysis with health score
+5. `salvar_action_proposals` — actions needing approval (with campaign_snapshot_id and report_id)
+
+### Health Score Rules (for campaign snapshots)
+
+- **8-10 (saudavel)**: CPA at/below target, steady conversions, good QS, positive trend
+- **4-7 (atencao)**: Some issues — CPA slightly high, conversions dropping, or mixed signals
+- **1-3 (problematica)**: CPA way above target, zero conversions, Manual CPC + Display, or critical issues
+
+### Action Proposal Rules
+
+- Generate proposals for actions that need user approval (pause, enable, add negatives, budget changes)
+- Always include `suggested_command` with the exact tool call Claude would make
+- Set `risk_level`: "low" for negatives/enable, "medium" for budget/pause, "high" for remove/create
+- Link to `campaign_snapshot_id` when the action relates to a specific campaign
+- Link to `report_id` when generated as part of a report
+
+### Deduplication
+
+Before saving insights, call `listar_insights(status: "pending")` and skip insights with similar titles. Before saving proposals, call `listar_action_proposals(status: "pending")` and skip duplicates.
+
 ## Marketing Best Practices
 
 - **Match types**: Never BROAD without Smart Bidding (tCPA or tROAS). Broad + Manual CPC = budget waste.
