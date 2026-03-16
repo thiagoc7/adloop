@@ -398,17 +398,67 @@ Rules:
 5. **Write in the correct language.** Check landing page. If unclear, ask user.
 6. **Aim for 25 chars or fewer** to leave margin.
 
-## Diesel BI Persistence
+## Diesel BI Persistence & Action Lifecycle
 
-After every analysis or report, persist results to Diesel BI via its MCP server (company_slug: "disbra" in prod, "diesel" in dev):
+After every analysis or report, persist results to Diesel BI via its MCP server (company_slug: "disbra" in prod, "diesel" in dev).
 
 ### Save workflow (all reports)
 
 1. `salvar_relatorio` — full markdown + kpis + summary
-2. `salvar_insights` — each recommendation with `suggested_command`
-3. `salvar_kpi_snapshot` — trend data (spend, clicks, conversions, CPA, etc.)
+2. `salvar_insights` — each recommendation with `suggested_command` (legacy, for report sidebar)
+3. `salvar_kpi_snapshot` — trend data for charts
 4. `salvar_campaign_snapshots` — per-campaign analysis with health score
-5. `salvar_action_proposals` — actions needing approval (with campaign_snapshot_id and report_id)
+5. `salvar_action_proposals` — ALL actionable recommendations (linked to campaign + report)
+
+**IMPORTANT:** Every actionable recommendation MUST be saved as an ActionProposal (not just an insight). The user reviews and approves actions in the Diesel BI UI. Insights are secondary — proposals are the primary workflow.
+
+### Action Lifecycle (5 stages)
+
+```
+1. PENDENTE — Claude proposes action in weekly-report
+   → User sees it in Diesel BI (campaign detail + report detail)
+
+2. APROVADA — User approves (with optional comment in user_notes)
+   → Waiting for Claude to execute
+
+3. EXECUTADA — User tells Claude "processa as ações aprovadas"
+   → Claude reads listar_action_proposals(status: "approved")
+   → Claude reads user_notes for any instructions
+   → Claude executes via AdLoop (draft → preview → confirm_and_apply)
+   → Claude updates: atualizar_action_proposal(status: "executed", execution_notes: "...")
+   → execution_notes describes what was done: "4 termos negativados na campanha Servicos"
+
+4. VERIFICADA — Next weekly-report measures the result
+   → Claude compares metrics before vs after the action
+   → Claude updates: atualizar_action_proposal(status: "verified", verification_notes: "...")
+   → verification_notes describes the outcome: "Desperdício caiu 68% (R$95→R$30/sem)"
+
+5. REJEITADA — User rejects with reason
+   → rejection_reason explains why
+   → Claude does NOT execute this action
+```
+
+### Processing approved actions
+
+When the user says "processa as ações aprovadas" or at the start of a new report:
+
+1. Call `listar_action_proposals(status: "approved")` — get all approved actions
+2. For each approved action:
+   a. Read `user_notes` — user may have added instructions ("inclui combuluz também")
+   b. Read `suggested_command` — the original command to execute
+   c. Execute via AdLoop tools (draft_* → preview → confirm_and_apply)
+   d. Verify execution via `run_gaql` (check the change was applied)
+   e. Call `atualizar_action_proposal(status: "executed", execution_notes: "...")`
+3. Report back to user what was done
+
+### Verifying executed actions (in weekly-report)
+
+During each weekly/monthly report, check for recently executed actions:
+
+1. Call `listar_action_proposals(status: "executed")` — get executed but unverified actions
+2. For each, compare current metrics vs the snapshot from before execution
+3. Call `atualizar_action_proposal(status: "verified", verification_notes: "...")`
+4. Mention results in the report body: "Semana passada negativamos X termos. Resultado: desperdício caiu Y%"
 
 ### Health Score Rules (for campaign snapshots)
 
@@ -418,15 +468,23 @@ After every analysis or report, persist results to Diesel BI via its MCP server 
 
 ### Action Proposal Rules
 
-- Generate proposals for actions that need user approval (pause, enable, add negatives, budget changes)
-- Always include `suggested_command` with the exact tool call Claude would make
+- Generate proposals for ALL actionable recommendations (not just high-risk ones)
+- Always include `suggested_command` with the exact tool call
 - Set `risk_level`: "low" for negatives/enable, "medium" for budget/pause, "high" for remove/create
-- Link to `campaign_snapshot_id` when the action relates to a specific campaign
-- Link to `report_id` when generated as part of a report
+- Link to `campaign_snapshot_id` — actions belong to a campaign
+- Link to `report_id` — actions are generated from a report
+- action_types: pause, enable, create_campaign, add_negatives, create_ad, change_budget, add_keywords
+
+### New campaigns
+
+- `draft_campaign` creates campaign as **PAUSED** (test mode)
+- User sees it in Diesel BI with status "paused"
+- User approves `enable` action → Claude enables → campaign goes live
+- This is the two-step safety: create paused → approve enable
 
 ### Deduplication
 
-Before saving insights, call `listar_insights(status: "pending")` and skip insights with similar titles. Before saving proposals, call `listar_action_proposals(status: "pending")` and skip duplicates.
+Before saving proposals, call `listar_action_proposals(status: "pending")` and skip proposals with similar titles. Don't duplicate existing pending actions.
 
 ## Marketing Best Practices
 
