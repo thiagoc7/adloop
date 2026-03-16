@@ -282,7 +282,7 @@ def draft_campaign(
     plan = ChangePlan(
         operation="create_campaign",
         entity_type="campaign",
-        customer_id=customer_id,
+        customer_id=customer_id or config.ads.customer_id,
         changes={
             "campaign_name": campaign_name,
             "daily_budget": daily_budget,
@@ -684,7 +684,9 @@ def _apply_create_campaign(client: object, cid: str, changes: dict) -> dict:
     campaign.name = changes["campaign_name"]
     campaign.campaign_budget = budget_service.campaign_budget_path(cid, "-1")
     campaign.status = client.enums.CampaignStatusEnum.PAUSED
-    campaign.contains_eu_political_advertising = False
+    campaign.contains_eu_political_advertising = (
+        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+    )
 
     channel = changes.get("channel_type", "SEARCH")
     campaign.advertising_channel_type = getattr(
@@ -743,7 +745,6 @@ def _apply_create_campaign(client: object, cid: str, changes: dict) -> dict:
 
     response = service.mutate(customer_id=cid, mutate_operations=operations)
 
-    resource_names = [r.mutate_operation_response for r in response.mutate_operation_responses]
     results = {}
     for i, resp in enumerate(response.mutate_operation_responses):
         resp_type = resp.WhichOneof("response")
