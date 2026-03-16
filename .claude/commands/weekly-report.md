@@ -117,6 +117,42 @@ Cada ação recomendada da seção "Ações Recomendadas" vira um insight separa
 - waste_amount: total gasto em termos sem conversão
 - insights_count: quantos insights gerados
 
+### 4d. salvar_campaign_snapshots
+Para cada campanha no período, gerar um snapshot com:
+- google_campaign_id, campaign_name, campaign_type (Search/PMax/Display/DemandGen)
+- status (enabled/paused), bidding_strategy
+- period_start, period_end
+- spend, clicks, impressions, conversions, cpa, ctr, cpc
+- health_score (1-10): baseado em CPA vs target, conversões, QS médio, trend
+  - 8-10: campanha saudável, CPA bom, conversões crescendo
+  - 4-7: atenção, algum problema mas funcional
+  - 1-3: problemática, CPA alto, sem conversões, ou desperdício
+- health_label: "saudavel" (score 7+), "atencao" (4-6), "problematica" (1-3)
+- summary: 2-3 frases sobre o estado da campanha
+- strengths: array de pontos fortes (ex: ["CPA abaixo do target", "CTR acima da média"])
+- problems: array de problemas (ex: ["Zero conversões", "QS médio abaixo de 5"])
+- recommendations: array de recomendações específicas
+
+### 4e. salvar_action_proposals
+Cada ação recomendada que precise de aprovação vira uma proposal:
+- action_type: pause|enable|add_negatives|create_ad|change_budget|add_keywords|create_campaign
+- title: descrição curta
+- description: detalhes com números
+- impact: estimativa de impacto
+- priority: high|medium|low
+- risk_level: high|medium|low
+- suggested_command: comando Claude que executa a ação (ex: "use add_negative_keywords tool with campaign_id X and keywords [...]")
+- campaign_snapshot_id: ID do snapshot vinculado (do passo 4d)
+- report_id: ID do relatório (do passo 4a)
+
+### 4f. Check de duplicatas
+Antes de salvar insights, chamar `listar_insights(status: "pending")` e verificar se já existe insight com título similar. Não duplicar.
+
+### 4g. Continuidade com insights anteriores
+Chamar `listar_insights(status: "pending")` e mencionar no relatório quais insights anteriores ainda estão pendentes. Se um insight foi implementado, reconhecer.
+
+**IMPORTANTE:** Cada insight salvo no passo 4b agora deve incluir `suggested_command` — o comando exato que o Claude executaria para implementar a ação (ex: "use add_negative_keywords tool...").
+
 ## 5. Também salvar .md local
 
 Salvar cópia em `reports/weekly/{ANO}-W{SEMANA}.md` para histórico git.

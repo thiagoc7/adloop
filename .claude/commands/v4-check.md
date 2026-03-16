@@ -25,9 +25,20 @@ Se existir relatório v4_check anterior no Diesel BI (`listar_relatorios` com re
 
 ## 4. Salvar no Diesel BI (diesel-bi MCP, company_slug "disbra")
 
-- `salvar_relatorio` — report_type: "v4_check", body com scorecard
-- `salvar_insights` — problemas encontrados como insights
-- `salvar_kpi_snapshot` — KPIs do período
+### 4a. salvar_relatorio
+- report_type: "v4_check", body com scorecard
+
+### 4b. salvar_insights
+- Problemas encontrados como insights com suggested_command
+
+### 4c. salvar_kpi_snapshot
+- KPIs do período
+
+### 4d. salvar_campaign_snapshots
+- Para cada campanha, gerar snapshot com health_score e análise (sem proposals — V4 que executa)
+
+### 4e. Check de duplicatas
+- Chamar `listar_insights(status: "pending")` antes de salvar, evitar duplicatas
 
 ## 5. Salvar .md local
 
