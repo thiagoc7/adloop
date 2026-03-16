@@ -684,6 +684,7 @@ def _apply_create_campaign(client: object, cid: str, changes: dict) -> dict:
     campaign.name = changes["campaign_name"]
     campaign.campaign_budget = budget_service.campaign_budget_path(cid, "-1")
     campaign.status = client.enums.CampaignStatusEnum.PAUSED
+    campaign.contains_eu_political_advertising = False
 
     channel = changes.get("channel_type", "SEARCH")
     campaign.advertising_channel_type = getattr(
