@@ -87,35 +87,53 @@ O body do relatório DEVE conter TODAS estas seções em markdown. Não resumir,
 (todas as ações, numeradas, priorizadas)
 ```
 
-## 4. Salvar no Diesel BI (diesel-bi MCP)
-
-Chamar as 3 tools com company_slug "disbra":
+## 4. Salvar no Diesel BI (diesel-bi MCP, company_slug "disbra")
 
 ### 4a. salvar_relatorio
 - report_type: "weekly"
 - title: "Relatório Semanal — {ANO}-W{SEMANA}"
 - period_start / period_end: datas da semana
 - body: **O MARKDOWN COMPLETO das seções acima. NÃO resumir.**
-- summary: 2-3 frases do resumo executivo (para o card na listagem)
-- kpis: { "spend": X, "conversions": X, "cpa": X, "clicks": X, "ctr": X, "cpc": X }
-- source: "adloop"
-- status: "published"
+- summary: 2-3 frases do resumo executivo
+- kpis: { "spend": X, "conversions": X, "cpa": X, "clicks": X, "ctr": X, "cpc": X, "impressions": X }
 
-### 4b. salvar_insights (com o report_id retornado)
-Cada ação recomendada da seção "Ações Recomendadas" vira um insight separado:
-- category: "negative_keywords" | "budget" | "bidding" | "ad_copy" | "campaign_structure" | "tracking" | "landing_page" | "general"
-- priority: "high" | "medium" | "low"
-- title: descrição curta da ação
-- description: detalhe com números (ex: "Sol Diesel gastou R$17 sem conversão em 30 dias")
-- impact: estimativa (ex: "~R$360/ano economia", "+15% CTR", "evita R$500/mês desperdício")
+### 4b. salvar_kpi_snapshot
+- period_type: "weekly", spend, clicks, impressions, conversions, cpa, ctr, cpc
+- top_campaign, waste_amount, insights_count
 
-### 4c. salvar_kpi_snapshot
-- period_type: "weekly"
-- period_start / period_end
-- spend, clicks, impressions, conversions, cpa, ctr, cpc
-- top_campaign: nome da campanha com menor CPA
-- waste_amount: total gasto em termos sem conversão
-- insights_count: quantos insights gerados
+### 4c. salvar_campaign_snapshots
+Para cada campanha, gerar snapshot com health_score, health_label, summary, strengths, problems, recommendations.
+- health_score 8-10 → "saudavel" | 4-7 → "atencao" | 1-3 → "problematica"
+
+### 4d. salvar_action_proposals (PRINCIPAL — todo insight acionável vira proposal)
+Cada recomendação acionável vira uma ActionProposal vinculada à campanha E ao relatório:
+- action_type: pause|enable|add_negatives|create_ad|change_budget|add_keywords|create_campaign
+- title, description, impact, priority, risk_level
+- suggested_command: comando exato que o Claude executaria
+- campaign_snapshot_id: ID do snapshot (do passo 4c)
+- report_id: ID do relatório (do passo 4a)
+
+O usuário vê essas ações no Diesel BI (na página da campanha e no relatório) e pode aprovar/rejeitar/comentar.
+
+### 4e. salvar_insights (secundário, para relatório)
+Mesmas recomendações salvas como insights para exibição no sidebar do relatório.
+- category, priority, title, description, impact, suggested_command
+
+### 4f. Verificar ações executadas
+Chamar `listar_action_proposals(status: "executed")` — ações que foram executadas mas ainda não verificadas.
+Para cada uma, comparar métricas antes vs depois e atualizar:
+- `atualizar_action_proposal(status: "verified", verification_notes: "Desperdício caiu X%")`
+- Mencionar no relatório: "Semana passada negativamos X termos. Resultado: desperdício caiu Y%"
+
+### 4g. Processar ações aprovadas
+Chamar `listar_action_proposals(status: "approved")` — ações aprovadas pelo usuário.
+Para cada uma:
+- Ler `user_notes` (comentários do usuário)
+- Executar via AdLoop (draft → preview → confirm_and_apply)
+- Atualizar: `atualizar_action_proposal(status: "executed", execution_notes: "...")`
+
+### 4h. Check de duplicatas
+Chamar `listar_action_proposals(status: "pending")` antes de salvar, evitar duplicatas.
 
 ## 5. Também salvar .md local
 

@@ -19,9 +19,23 @@ Se problemas de landing page: `landing_page_analysis`
 
 ## 3. Salvar no Diesel BI (diesel-bi MCP, company_slug "disbra")
 
-- `salvar_relatorio` — report_type: "custom", body, summary, kpis
-- `salvar_insights` — problemas e recomendações
-- `salvar_kpi_snapshot` — se for período standard (semana/mês)
+### 3a. salvar_relatorio
+- report_type: "custom", body completo, summary, kpis
+
+### 3b. salvar_insights
+- Problemas e recomendações com suggested_command
+
+### 3c. salvar_kpi_snapshot
+- Se for período standard (semana/mês)
+
+### 3d. salvar_campaign_snapshots
+- Para cada campanha analisada, gerar snapshot com health_score, health_label, summary, strengths, problems, recommendations
+
+### 3e. salvar_action_proposals
+- Cada ação recomendada que precisa aprovação vira proposal com action_type, title, priority, risk_level, suggested_command
+
+### 3f. Check de duplicatas
+- Chamar `listar_insights(status: "pending")` antes de salvar, evitar duplicatas
 
 ## 4. Salvar .md local
 
